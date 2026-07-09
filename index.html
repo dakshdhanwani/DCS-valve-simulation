@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCS Control Valve Simulator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chart.js for Trend Graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="ambient-bg"></div>
+    
+    <header>
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <h1>ABB 800xA DCS REAL-TIME SIMULATOR</h1>
+        </div>
+        <div id="systemStatus">
+            <button id="fullscreenBtn" class="btn presentation-btn" title="Toggle Fullscreen">🖥️ Present</button>
+            <div class="status-indicator"><span id="commLed" class="led green"></span> Comm Link</div>
+            <div class="status-indicator"><span id="ctrlLed" class="led green"></span> Controller</div>
+            <div class="status-indicator"><span id="valveLed" class="led green"></span> Valve Field</div>
+        </div>
+    </header>
+
+    <div id="container">
+        <!-- ===================================================== -->
+        <!-- LEFT: ARCHITECTURE DIAGRAM                            -->
+        <!-- ===================================================== -->
+        <div id="architecture">
+            <svg id="signalCanvas"></svg> <!-- For dynamic SVG lines -->
+            
+            <div class="level-container">
+                <div class="zone-label">LEVEL 3: PLANT NETWORK (ETHERNET)</div>
+                <div class="nodes-row">
+                    <div class="device server" id="operator">
+                        <div class="icon">🖥️</div>
+                        <h3>Operator Station</h3>
+                        <p>OS-01</p>
+                    </div>
+                    <div class="device server" id="aspect">
+                        <div class="icon">🗄️</div>
+                        <h3>Aspect Server</h3>
+                    </div>
+                    <div class="device server" id="history">
+                        <div class="icon">📊</div>
+                        <h3>History Server</h3>
+                    </div>
+                    <div class="device server" id="apc">
+                        <div class="icon">🧠</div>
+                        <h3>APC Server</h3>
+                    </div>
+                    <div class="device server" id="kvm">
+                        <div class="icon">🔌</div>
+                        <h3>KVM Switch</h3>
+                    </div>
+                </div>
+            </div>
+
+            <div class="level-container security-zone">
+                <div class="zone-label security-label">⛔ SECURITY BOUNDARY — Firewall inspects traffic here. Data flows via Connectivity Server.</div>
+                <div class="nodes-row security-row">
+                    <!-- Firewall shown as boundary wall, NOT in the data path -->
+                    <div class="device firewall boundary-device" id="firewall">
+                        <div class="icon">🧱</div>
+                        <h3>Hardware Firewall</h3>
+                        <p class="boundary-note">Boundary Guard<br>(Traffic Inspection)</p>
+                    </div>
+                    <div class="boundary-arrow">⟷</div>
+                    <!-- Connectivity Server is the ACTUAL data bridge between networks -->
+                    <div class="device server connectivity" id="connectivity">
+                        <div class="icon">🔄</div>
+                        <h3>Connectivity Server</h3>
+                        <p class="bridge-note">Data Bridge<br>(Dual NIC — L3 ↔ L2)</p>
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="level-container">
+                <div class="zone-label">LEVEL 2: CONTROL NETWORK (ETHERNET)</div>
+                <div class="nodes-row">
+                    <div class="device controller" id="controller">
+                        <div class="icon">⚙️</div>
+                        <h3>AC800M Controller</h3>
+                        <div class="led-bar"><span class="led green small"></span><span class="led green small"></span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="level-container">
+                <div class="zone-label">LEVEL 1: FIELDBUS & I/O</div>
+                <div class="nodes-row">
+                    <div class="device comm" id="commModule">
+                        <div class="icon">📡</div>
+                        <h3>Profibus Comm</h3>
+                    </div>
+                </div>
+                <div class="nodes-row gap-large">
+                    <div class="device io ao" id="aoCard">
+                        <h3>AO Card (4-20mA)</h3>
+                        <div class="live-val mono" id="aoLiveVal">-- mA</div>
+                    </div>
+                    <div class="device io ai" id="aiCard">
+                        <h3>AI Card (4-20mA)</h3>
+                        <div class="live-val mono" id="aiLiveVal">-- mA</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="level-container field-zone">
+                <div class="zone-label">LEVEL 0: FIELD DEVICES</div>
+                <div class="nodes-row field-flow">
+                    <div class="device field" id="marshalling">
+                        <div class="icon">🗃️</div>
+                        <h3>Marshalling</h3>
+                    </div>
+                    <div class="device field" id="junction">
+                        <div class="icon">📦</div>
+                        <h3>Junction Box</h3>
+                    </div>
+                    <div class="device field" id="ipConverter">
+                        <div class="icon">🎛️</div>
+                        <h3>I/P Converter</h3>
+                        <div class="live-val mono" id="ipLiveVal">-- psi</div>
+                    </div>
+                    
+                    <div class="device valveDevice" id="valve">
+                        <h3>FV-101</h3>
+                        <p>Control Valve</p>
+                        <div class="valve-svg-container">
+                            <svg viewBox="0 0 100 120" id="valveSvg">
+                                <!-- Actuator casing -->
+                                <path d="M 20 20 Q 50 0 80 20 L 80 30 L 20 30 Z" fill="#3b5b78"/>
+                                <rect x="35" y="30" width="30" height="20" fill="#2c4259"/>
+                                <!-- Stem (animated) -->
+                                <rect id="valveStem" x="48" y="50" width="4" height="40" fill="#a0aec0" transform="translate(0, 0)"/>
+                                <!-- Valve Body -->
+                                <path d="M 20 70 L 80 110 L 80 70 L 20 110 Z" fill="#3b5b78"/>
+                                <!-- Plug (attached to stem) -->
+                                <polygon id="valvePlug" points="40,85 60,85 50,105" fill="#00e5ff" transform="translate(0, 0)"/>
+                            </svg>
+                        </div>
+                        <div class="live-val mono highlight" id="valvePosVal">40.0%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================================================== -->
+        <!-- RIGHT: CONTROL PANEL & LIVE DATA                      -->
+        <!-- ===================================================== -->
+        <div id="controlPanel">
+            
+            <section class="glass-panel command-section">
+                <h2>Control Valve Command</h2>
+                <div class="slider-container">
+                    <input type="range" id="commandSlider" min="0" max="100" value="40" step="0.1">
+                </div>
+                <div class="command-display">
+                    <span class="mono" id="commandValue">40.0</span><span class="unit">%</span>
+                </div>
+                <button id="sendBtn" class="btn primary-btn">
+                    <span class="btn-text">TRANSMIT SP</span>
+                    <div class="btn-glow"></div>
+                </button>
+            </section>
+
+            <!-- SP VS PV TREND CHART -->
+            <section class="glass-panel chart-section">
+                <h2>Real-Time SP/PV Trend</h2>
+                <div class="chart-container" style="position: relative; height:120px; width:100%">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </section>
+
+            <section class="glass-panel live-data-section">
+                <h2>Live Telemetry</h2>
+                <div class="data-grid">
+                    <div class="data-card">
+                        <span class="data-label">AO (Control)</span>
+                        <span class="data-value mono" id="currentValue">10.40 mA</span>
+                    </div>
+                    <div class="data-card">
+                        <span class="data-label">Pneumatic</span>
+                        <span class="data-value mono" id="pressureValue">7.80 psi</span>
+                    </div>
+                    <div class="data-card highlight-card">
+                        <span class="data-label">Valve Position</span>
+                        <span class="data-value mono" id="feedbackValue">39.8 %</span>
+                    </div>
+                    <div class="data-card">
+                        <span class="data-label">AI (Feedback)</span>
+                        <span class="data-value mono" id="aiFeedbackValue">10.37 mA</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="glass-panel pid-section">
+                <h2>PID Controller Status</h2>
+                <div class="pid-display">
+                    <div class="pid-row"><span class="pid-label">MODE</span><span class="pid-val mode-auto">AUTO</span></div>
+                    <div class="pid-row"><span class="pid-label">SP (Set Point)</span><span class="pid-val mono" id="spValue">40.0 %</span></div>
+                    <div class="pid-row"><span class="pid-label">PV (Process Val)</span><span class="pid-val mono" id="pvValue">39.8 %</span></div>
+                    <div class="pid-row"><span class="pid-label">OUT (Output)</span><span class="pid-val mono" id="outValue">10.40 mA</span></div>
+                </div>
+            </section>
+
+            <section class="glass-panel controls-section">
+                <h2>Valve Config & System Controls</h2>
+                <div class="valve-config-row">
+                    <label class="config-label">Valve Action:</label>
+                    <select id="valveTypeSelect" class="styled-select">
+                        <option value="FC" selected>Fail Closed (Air-to-Open)</option>
+                        <option value="FO">Fail Open (Air-to-Close)</option>
+                    </select>
+                </div>
+                <div class="btn-group" style="margin-top: 15px;">
+                    <button id="wireBreakBtn" class="btn warning-btn" title="Simulate cut 4-20mA wire">⚡ Wire Break</button>
+                    <button id="airLossBtn" class="btn warning-btn" title="Simulate loss of instrument air">💨 Air Loss</button>
+                </div>
+                <div class="btn-group" style="margin-top: 10px;">
+                    <button id="pauseBtn" class="btn warning-btn" style="flex:1;">⏸ PAUSE</button>
+                    <button id="alarmBtn" class="btn danger-btn" style="flex:1;">COMMS FAULT</button>
+                    <button id="resetBtn" class="btn secondary-btn" style="flex:1;">SYSTEM RESET</button>
+                </div>
+            </section>
+
+            <section class="glass-panel event-section">
+                <h2>System Log</h2>
+                <div id="eventLog">
+                    <!-- Logs go here -->
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <!-- POPUP MODAL -->
+    <div id="popup" class="modal-overlay">
+        <div class="modal-content glass-panel">
+            <h2 id="popupTitle">Device</h2>
+            <div class="modal-body">
+                <p id="popupText">Information</p>
+                <div class="modal-status">Status: <span class="status-ok">Online</span></div>
+            </div>
+            <button id="closePopup" class="btn primary-btn">Dismiss</button>
+        </div>
+    </div>
+
+    <!-- MATH OVERLAY -->
+    <div id="mathOverlay" class="math-overlay">
+        <div class="math-title">Active Calculation</div>
+        <div id="mathFormula" class="math-formula mono">4 + (40 * 0.16) = 10.4mA</div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
