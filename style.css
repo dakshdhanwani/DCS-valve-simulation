@@ -635,3 +635,48 @@ input[type=range] {
     border-color: var(--accent-cyan);
     box-shadow: 0 0 5px rgba(0, 229, 255, 0.2);
 }
+
+/* =========================================================
+   MOBILE RESPONSIVENESS
+   ========================================================= */
+@media (max-width: 1000px) {
+    header {
+        flex-direction: column;
+        gap: 15px;
+        height: auto;
+        padding: 15px;
+    }
+    
+    #container {
+        flex-direction: column;
+        height: auto;
+        overflow-y: visible;
+    }
+
+    #architecture {
+        width: 100%;
+        overflow-x: auto; /* Allow horizontal scroll for diagram */
+        padding: 20px;
+        border-right: none;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* Force the architecture nodes to maintain their layout shape so SVG paths don't break */
+    .level-container {
+        min-width: 800px; 
+    }
+
+    #controlPanel {
+        width: 100%;
+        max-width: 100%;
+        padding: 20px;
+    }
+
+    .data-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .btn-group {
+        flex-wrap: wrap;
+    }
+}
